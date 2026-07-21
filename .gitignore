@@ -1,0 +1,6 @@
+.env
+dashboard_data.json
+__pycache__/
+*.pyc
+refresh.log
+public/

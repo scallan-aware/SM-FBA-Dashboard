@@ -1,0 +1,1531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amazon FBA Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121820; --panel2: #161f2b; --border: #232c38;
+    --text: #e6edf3; --text-dim: #8b98a5; --text-faint: #5b6674;
+    --green: #22c55e; --green-bg: rgba(34,197,94,0.12);
+    --yellow: #eab308; --yellow-bg: rgba(234,179,8,0.12);
+    --red: #ef4444; --red-bg: rgba(239,68,68,0.12);
+    --blue: #3b82f6; --blue-bg: rgba(59,130,246,0.12);
+    --purple: #a855f7; --purple-bg: rgba(168,85,247,0.12);
+    --gray: #94a3b8; --gray-bg: rgba(148,163,184,0.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px; line-height: 1.4;
+  }
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  header.top { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  header.top h1 { font-size: 20px; margin: 0 0 4px; font-weight: 650; }
+  header.top .meta { color: var(--text-dim); font-size: 12.5px; }
+  .refresh-hint { font-size: 12px; color: var(--text-faint); }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 20px; }
+  @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 640px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .kpi .label { font-size: 11.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .kpi .value { font-size: 20px; font-weight: 650; }
+  .kpi .sub { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; }
+
+  .rec-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
+  .rec-panel h2 { font-size: 13.5px; margin: 0 0 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  .rec-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+  .rec-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 7px; background: var(--panel2); font-size: 13px; }
+  .rec-tag { flex-shrink: 0; font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+  .rec-item.high .rec-tag { background: var(--red-bg); color: var(--red); }
+  .rec-item.medium .rec-tag { background: var(--yellow-bg); color: var(--yellow); }
+  .rec-text { color: var(--text); }
+
+  nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  nav.tabs button {
+    background: none; border: none; color: var(--text-dim); padding: 10px 16px; font-size: 13.5px;
+    font-weight: 550; cursor: pointer; border-bottom: 2px solid transparent; transition: color .15s;
+  }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button.active { color: var(--text); border-bottom-color: var(--blue); }
+  nav.tabs .count { color: var(--text-faint); font-weight: 400; }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type="text"] {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 11px; border-radius: 7px; font-size: 13px; min-width: 220px;
+  }
+  .toolbar select {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 11px; border-radius: 7px; font-size: 13px;
+  }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .result-count { color: var(--text-faint); font-size: 12.5px; }
+
+  .table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em;
+    color: var(--text-dim); padding: 10px 14px; border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none; white-space: nowrap; background: var(--panel2);
+  }
+  thead th:hover { color: var(--text); }
+  thead th.num, td.num { text-align: right; }
+  thead th .arrow { font-size: 9px; margin-left: 3px; color: var(--text-faint); }
+  tbody td { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 13px; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  td.name-cell { white-space: normal; max-width: 260px; }
+  td.reason-cell { white-space: normal; max-width: 320px; color: var(--text-dim); font-size: 12.5px; }
+
+  .pill { display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 650; }
+  .pill.green { background: var(--green-bg); color: var(--green); }
+  .pill.yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .pill.red { background: var(--red-bg); color: var(--red); }
+  .pill.blue { background: var(--blue-bg); color: var(--blue); }
+  .pill.purple { background: var(--purple-bg); color: var(--purple); }
+  .pill.gray { background: var(--gray-bg); color: var(--gray); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Amazon FBA Dashboard</h1>
+      <div class="meta" id="metaLine">Loading…</div>
+    </div>
+    <div class="refresh-hint" id="dataSourceHint"></div>
+  </header>
+
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <div class="rec-panel">
+    <h2>Action Feed <span id="recCount"></span></h2>
+    <div class="rec-list" id="recList"></div>
+  </div>
+
+  <nav class="tabs" id="tabNav">
+    <button data-tab="overview" class="active">Overview</button>
+    <button data-tab="campaigns">Campaign Scaling</button>
+    <button data-tab="keywords">Keyword Analysis</button>
+    <button data-tab="inventory">Inventory Alerts</button>
+  </nav>
+
+  <!-- OVERVIEW -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="toolbar">
+      <input type="text" id="overviewSearch" placeholder="Search ASIN or product name…">
+      <div class="spacer"></div>
+      <div class="result-count" id="overviewCount"></div>
+    </div>
+    <div class="table-wrap">
+      <table id="overviewTable">
+        <thead><tr>
+          <th data-key="name">Product</th>
+          <th data-key="asin">ASIN</th>
+          <th data-key="organic_sales" class="num">Organic Sales</th>
+          <th data-key="paid_sales" class="num">Paid Sales</th>
+          <th data-key="ad_spend" class="num">Ad Spend</th>
+          <th data-key="units" class="num">Units</th>
+          <th data-key="sessions" class="num">Sessions</th>
+          <th data-key="cvr" class="num">CVR</th>
+          <th data-key="acos" class="num">ACOS</th>
+          <th data-key="days_of_cover" class="num">Days Cover</th>
+          <th data-key="inventory_alert">Inventory</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CAMPAIGNS -->
+  <div class="tab-panel" id="tab-campaigns">
+    <div class="toolbar">
+      <input type="text" id="campaignSearch" placeholder="Search campaign name…">
+      <select id="campaignFilter">
+        <option value="">All recommendations</option>
+        <option value="Scale">Scale</option>
+        <option value="Hold">Hold</option>
+        <option value="Optimize">Optimize</option>
+        <option value="Cut">Cut</option>
+        <option value="Needs more data">Needs more data</option>
+      </select>
+      <div class="spacer"></div>
+      <div class="result-count" id="campaignCount"></div>
+    </div>
+    <div class="table-wrap">
+      <table id="campaignTable">
+        <thead><tr>
+          <th data-key="campaign_name">Campaign</th>
+          <th data-key="impressions" class="num">Impr.</th>
+          <th data-key="clicks" class="num">Clicks</th>
+          <th data-key="spend" class="num">Spend</th>
+          <th data-key="sales" class="num">Sales</th>
+          <th data-key="orders" class="num">Orders</th>
+          <th data-key="acos" class="num">ACOS</th>
+          <th data-key="recommendation">Action</th>
+          <th>Why</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- KEYWORDS -->
+  <div class="tab-panel" id="tab-keywords">
+    <div class="toolbar">
+      <input type="text" id="keywordSearch" placeholder="Search keyword, search term, or campaign…">
+      <select id="keywordFilter">
+        <option value="">All recommendations</option>
+        <option value="Raise bid">Raise bid</option>
+        <option value="Hold">Hold</option>
+        <option value="Lower bid">Lower bid</option>
+        <option value="Lower bid / pause">Lower bid / pause</option>
+        <option value="Add as negative">Add as negative</option>
+        <option value="Harvest to exact">Harvest to exact</option>
+        <option value="Needs more data">Needs more data</option>
+      </select>
+      <div class="spacer"></div>
+      <div class="result-count" id="keywordCount"></div>
+    </div>
+    <div class="table-wrap">
+      <table id="keywordTable">
+        <thead><tr>
+          <th data-key="keyword_text">Keyword / Search Term</th>
+          <th data-key="match_type">Match</th>
+          <th data-key="campaign_name">Campaign</th>
+          <th data-key="impressions" class="num">Impr.</th>
+          <th data-key="clicks" class="num">Clicks</th>
+          <th data-key="spend" class="num">Spend</th>
+          <th data-key="sales" class="num">Sales</th>
+          <th data-key="cpc" class="num">CPC</th>
+          <th data-key="cvr" class="num">CVR</th>
+          <th data-key="acos" class="num">ACOS</th>
+          <th data-key="recommendation">Action</th>
+          <th>Why</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- INVENTORY -->
+  <div class="tab-panel" id="tab-inventory">
+    <div class="toolbar">
+      <input type="text" id="inventorySearch" placeholder="Search ASIN or product name…">
+      <div class="spacer"></div>
+      <div class="result-count" id="inventoryCount"></div>
+    </div>
+    <div class="table-wrap">
+      <table id="inventoryTable">
+        <thead><tr>
+          <th data-key="name">Product</th>
+          <th data-key="asin">ASIN</th>
+          <th data-key="units_available" class="num">Available</th>
+          <th data-key="units_inbound" class="num">Inbound</th>
+          <th data-key="avg_daily_units" class="num">Avg Daily Units</th>
+          <th data-key="days_of_cover" class="num">Days Cover</th>
+          <th data-key="alert_level">Status</th>
+          <th data-key="recommended_reorder_qty" class="num">Reorder Qty</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Embedded sample data (used if dashboard_data.json can't be fetched, e.g. opened as a local file) ──
+const SAMPLE_DATA = /*DATA_START*/{
+  "generated_at": "2026-07-21T02:21:28.436228+00:00",
+  "marketplace": "US",
+  "period_days": 30,
+  "summary": {
+    "total_sales": 82571.24,
+    "total_units": 2548,
+    "sessions": 36808,
+    "ad_spend": 8645.98,
+    "acos": 18.9,
+    "tacos": 10.47,
+    "cvr": 6.92
+  },
+  "asins": [
+    {
+      "asin": "B08NWKCPQV",
+      "name": "Reusable Produce Mesh Bags (15-pack)",
+      "organic_sales": 7712.42,
+      "paid_sales": 16982.54,
+      "ad_spend": 1365.06,
+      "units": 428,
+      "sessions": 7870,
+      "acos": 8.04,
+      "cvr": 5.44,
+      "units_available": 784,
+      "units_inbound": 185,
+      "days_of_cover": 55.0,
+      "inventory_alert": "ok"
+    },
+    {
+      "asin": "B09XK7P4VL",
+      "name": "Premium Bamboo Cutting Board Set (3-Piece)",
+      "organic_sales": 7096.29,
+      "paid_sales": 5372.29,
+      "ad_spend": 1059.59,
+      "units": 579,
+      "sessions": 5452,
+      "acos": 19.72,
+      "cvr": 10.62,
+      "units_available": 1930,
+      "units_inbound": 29,
+      "days_of_cover": 100.0,
+      "inventory_alert": "overstock"
+    },
+    {
+      "asin": "B0BXRQT2MN",
+      "name": "Non-Stick Ceramic Frying Pan 12\"",
+      "organic_sales": 7551.17,
+      "paid_sales": 3744.78,
+      "ad_spend": 1116.01,
+      "units": 405,
+      "sessions": 3814,
+      "acos": 29.8,
+      "cvr": 10.62,
+      "units_available": 108,
+      "units_inbound": 113,
+      "days_of_cover": 8.0,
+      "inventory_alert": "critical"
+    },
+    {
+      "asin": "B0D2FKRTYZ",
+      "name": "Cast Iron Skillet Pre-Seasoned 10\"",
+      "organic_sales": 4260.66,
+      "paid_sales": 6480.77,
+      "ad_spend": 1799.04,
+      "units": 301,
+      "sessions": 5255,
+      "acos": 27.76,
+      "cvr": 5.73,
+      "units_available": 551,
+      "units_inbound": 175,
+      "days_of_cover": 54.9,
+      "inventory_alert": "ok"
+    },
+    {
+      "asin": "B08CHTPJ3D",
+      "name": "Stainless Steel Insulated Water Bottle 32oz",
+      "organic_sales": 4247.34,
+      "paid_sales": 5960.3,
+      "ad_spend": 1236.0,
+      "units": 382,
+      "sessions": 6956,
+      "acos": 20.74,
+      "cvr": 5.49,
+      "units_available": 101,
+      "units_inbound": 289,
+      "days_of_cover": 7.9,
+      "inventory_alert": "critical"
+    },
+    {
+      "asin": "B0C4WKJD9R",
+      "name": "Electric Spice Grinder Stainless",
+      "organic_sales": 3026.66,
+      "paid_sales": 3931.8,
+      "ad_spend": 1609.7,
+      "units": 202,
+      "sessions": 4280,
+      "acos": 40.94,
+      "cvr": 4.72,
+      "units_available": 673,
+      "units_inbound": 30,
+      "days_of_cover": 100.0,
+      "inventory_alert": "overstock"
+    },
+    {
+      "asin": "B07MFZX89K",
+      "name": "Silicone Kitchen Utensil Set (24 pcs)",
+      "organic_sales": 2928.16,
+      "paid_sales": 3276.06,
+      "ad_spend": 460.58,
+      "units": 251,
+      "sessions": 3181,
+      "acos": 14.06,
+      "cvr": 7.89,
+      "units_available": 836,
+      "units_inbound": 349,
+      "days_of_cover": 99.9,
+      "inventory_alert": "overstock"
+    }
+  ],
+  "campaigns": [
+    {
+      "campaign_id": "B08NWKCPQV - Auto",
+      "campaign_name": "Reusable Produce Mesh Bags ( - Auto",
+      "impressions": 1968,
+      "clicks": 82,
+      "spend": 865.34,
+      "sales": 12018.61,
+      "orders": 619,
+      "acos": 7.2,
+      "recommendation": "Scale",
+      "recommendation_reason": "ACOS 7.2% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "campaign_id": "B09XK7P4VL - Auto",
+      "campaign_name": "Premium Bamboo Cutting Board - Auto",
+      "impressions": 2888,
+      "clicks": 152,
+      "spend": 678.15,
+      "sales": 3853.12,
+      "orders": 135,
+      "acos": 17.6,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 17.6% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B08CHTPJ3D - Broad",
+      "campaign_name": "Stainless Steel Insulated Wa - Broad",
+      "impressions": 1280,
+      "clicks": 40,
+      "spend": 733.45,
+      "sales": 3049.69,
+      "orders": 94,
+      "acos": 24.05,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 24.05% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B08NWKCPQV - Exact",
+      "campaign_name": "Reusable Produce Mesh Bags ( - Exact",
+      "impressions": 6448,
+      "clicks": 124,
+      "spend": 270.2,
+      "sales": 3002.22,
+      "orders": 164,
+      "acos": 9.0,
+      "recommendation": "Scale",
+      "recommendation_reason": "ACOS 9.0% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "campaign_id": "B0D2FKRTYZ - Auto",
+      "campaign_name": "Cast Iron Skillet Pre-Season - Auto",
+      "impressions": 7291,
+      "clicks": 317,
+      "spend": 518.36,
+      "sales": 2356.18,
+      "orders": 85,
+      "acos": 22.0,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 22.0% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B0D2FKRTYZ - Exact",
+      "campaign_name": "Cast Iron Skillet Pre-Season - Exact",
+      "impressions": 15008,
+      "clicks": 268,
+      "spend": 646.2,
+      "sales": 2349.82,
+      "orders": 68,
+      "acos": 27.5,
+      "recommendation": "Optimize",
+      "recommendation_reason": "ACOS 27.5% is above target. Trim underperforming keywords, lower bids ~10%."
+    },
+    {
+      "campaign_id": "B0C4WKJD9R - Exact",
+      "campaign_name": "Electric Spice Grinder Stain - Exact",
+      "impressions": 7200,
+      "clicks": 225,
+      "spend": 804.37,
+      "sales": 2116.76,
+      "orders": 64,
+      "acos": 38.0,
+      "recommendation": "Cut",
+      "recommendation_reason": "ACOS 38.0% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "campaign_id": "B08NWKCPQV - Broad",
+      "campaign_name": "Reusable Produce Mesh Bags ( - Broad",
+      "impressions": 6109,
+      "clicks": 149,
+      "spend": 229.52,
+      "sales": 1961.71,
+      "orders": 108,
+      "acos": 11.7,
+      "recommendation": "Scale",
+      "recommendation_reason": "ACOS 11.7% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "campaign_id": "B08CHTPJ3D - Exact",
+      "campaign_name": "Stainless Steel Insulated Wa - Exact",
+      "impressions": 9568,
+      "clicks": 184,
+      "spend": 358.9,
+      "sales": 1940.0,
+      "orders": 69,
+      "acos": 18.5,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 18.5% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B0BXRQT2MN - Auto",
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Auto",
+      "impressions": 20355,
+      "clicks": 345,
+      "spend": 468.76,
+      "sales": 1890.16,
+      "orders": 98,
+      "acos": 24.8,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 24.8% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B0D2FKRTYZ - Broad",
+      "campaign_name": "Cast Iron Skillet Pre-Season - Broad",
+      "impressions": 1856,
+      "clicks": 32,
+      "spend": 634.48,
+      "sales": 1774.77,
+      "orders": 68,
+      "acos": 35.75,
+      "recommendation": "Cut",
+      "recommendation_reason": "ACOS 35.75% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "campaign_id": "B0C4WKJD9R - Broad",
+      "campaign_name": "Electric Spice Grinder Stain - Broad",
+      "impressions": 7332,
+      "clicks": 188,
+      "spend": 659.25,
+      "sales": 1334.51,
+      "orders": 45,
+      "acos": 49.4,
+      "recommendation": "Cut",
+      "recommendation_reason": "ACOS 49.4% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "campaign_id": "B07MFZX89K - Exact",
+      "campaign_name": "Silicone Kitchen Utensil Set - Exact",
+      "impressions": 1155,
+      "clicks": 35,
+      "spend": 176.02,
+      "sales": 1303.85,
+      "orders": 60,
+      "acos": 13.5,
+      "recommendation": "Scale",
+      "recommendation_reason": "ACOS 13.5% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "campaign_id": "B0BXRQT2MN - Exact",
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Exact",
+      "impressions": 12900,
+      "clicks": 300,
+      "spend": 333.88,
+      "sales": 1077.03,
+      "orders": 30,
+      "acos": 31.0,
+      "recommendation": "Optimize",
+      "recommendation_reason": "ACOS 31.0% is above target. Trim underperforming keywords, lower bids ~10%."
+    },
+    {
+      "campaign_id": "B07MFZX89K - Broad",
+      "campaign_name": "Silicone Kitchen Utensil Set - Broad",
+      "impressions": 6026,
+      "clicks": 131,
+      "spend": 186.06,
+      "sales": 1060.17,
+      "orders": 42,
+      "acos": 17.55,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 17.55% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B08CHTPJ3D - Auto",
+      "campaign_name": "Stainless Steel Insulated Wa - Auto",
+      "impressions": 10150,
+      "clicks": 290,
+      "spend": 143.65,
+      "sales": 970.61,
+      "orders": 34,
+      "acos": 14.8,
+      "recommendation": "Scale",
+      "recommendation_reason": "ACOS 14.8% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "campaign_id": "B07MFZX89K - Auto",
+      "campaign_name": "Silicone Kitchen Utensil Set - Auto",
+      "impressions": 13014,
+      "clicks": 241,
+      "spend": 98.5,
+      "sales": 912.04,
+      "orders": 37,
+      "acos": 10.8,
+      "recommendation": "Scale",
+      "recommendation_reason": "ACOS 10.8% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "campaign_id": "B09XK7P4VL - Exact",
+      "campaign_name": "Premium Bamboo Cutting Board - Exact",
+      "impressions": 7884,
+      "clicks": 219,
+      "spend": 176.81,
+      "sales": 803.68,
+      "orders": 38,
+      "acos": 22.0,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 22.0% is within your 15-25% target band. Maintain current bids/budget."
+    },
+    {
+      "campaign_id": "B0BXRQT2MN - Broad",
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Broad",
+      "impressions": 7474,
+      "clicks": 202,
+      "spend": 313.37,
+      "sales": 777.59,
+      "orders": 23,
+      "acos": 40.3,
+      "recommendation": "Cut",
+      "recommendation_reason": "ACOS 40.3% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "campaign_id": "B09XK7P4VL - Broad",
+      "campaign_name": "Premium Bamboo Cutting Board - Broad",
+      "impressions": 14535,
+      "clicks": 255,
+      "spend": 204.63,
+      "sales": 715.49,
+      "orders": 28,
+      "acos": 28.6,
+      "recommendation": "Optimize",
+      "recommendation_reason": "ACOS 28.6% is above target. Trim underperforming keywords, lower bids ~10%."
+    },
+    {
+      "campaign_id": "B0C4WKJD9R - Auto",
+      "campaign_name": "Electric Spice Grinder Stain - Auto",
+      "impressions": 7488,
+      "clicks": 234,
+      "spend": 146.08,
+      "sales": 480.53,
+      "orders": 19,
+      "acos": 30.4,
+      "recommendation": "Optimize",
+      "recommendation_reason": "ACOS 30.4% is above target. Trim underperforming keywords, lower bids ~10%."
+    }
+  ],
+  "keywords": [
+    {
+      "campaign_name": "Stainless Steel Insulated Wa - Exact",
+      "ad_group": "Stainless Steel Insu AG1",
+      "keyword_text": "mesh produce bags",
+      "match_type": "exact",
+      "search_term": "mesh produce bags",
+      "impressions": 5191,
+      "clicks": 179,
+      "spend": 215.38,
+      "sales": 717.62,
+      "orders": 22,
+      "acos": 30.01,
+      "cvr": 12.29,
+      "cpc": 1.2,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 30.01% is above target. Lower bid ~15%."
+    },
+    {
+      "campaign_name": "Cast Iron Skillet Pre-Season - Exact",
+      "ad_group": "Cast Iron Skillet Pr AG1",
+      "keyword_text": "stainless steel bottle",
+      "match_type": "exact",
+      "search_term": "stainless steel bottle",
+      "impressions": 3434,
+      "clicks": 202,
+      "spend": 211.57,
+      "sales": 1189.64,
+      "orders": 54,
+      "acos": 17.78,
+      "cvr": 26.73,
+      "cpc": 1.05,
+      "recommendation": "Harvest to exact",
+      "recommendation_reason": "Converts well (54 orders, 17.78% ACOS) but isn't an exact-match keyword yet. Add as new exact-match keyword and monitor separately."
+    },
+    {
+      "campaign_name": "Reusable Produce Mesh Bags ( - Exact",
+      "ad_group": "Reusable Produce Mes AG1",
+      "keyword_text": "ceramic frying pan",
+      "match_type": "phrase",
+      "search_term": "ceramic frying pan",
+      "impressions": 1974,
+      "clicks": 94,
+      "spend": 206.99,
+      "sales": 1720.84,
+      "orders": 84,
+      "acos": 12.03,
+      "cvr": 89.36,
+      "cpc": 2.2,
+      "recommendation": "Harvest to exact",
+      "recommendation_reason": "Converts well (84 orders, 12.03% ACOS) but isn't an exact-match keyword yet. Add as new exact-match keyword and monitor separately."
+    },
+    {
+      "campaign_name": "Silicone Kitchen Utensil Set - Exact",
+      "ad_group": "Silicone Kitchen Ute AG1",
+      "keyword_text": "stainless steel bottle",
+      "match_type": "broad",
+      "search_term": "",
+      "impressions": 6768,
+      "clicks": 141,
+      "spend": 206.56,
+      "sales": 0.0,
+      "orders": 0,
+      "acos": 999.0,
+      "cvr": 0.0,
+      "cpc": 1.46,
+      "recommendation": "Add as negative",
+      "recommendation_reason": "$206.56 spent, 0 orders. Add as negative exact to stop wasted spend."
+    },
+    {
+      "campaign_name": "Reusable Produce Mesh Bags ( - Exact",
+      "ad_group": "Reusable Produce Mes AG1",
+      "keyword_text": "pre seasoned skillet",
+      "match_type": "exact",
+      "search_term": "pre seasoned skillet",
+      "impressions": 1820,
+      "clicks": 52,
+      "spend": 203.4,
+      "sales": 0.0,
+      "orders": 0,
+      "acos": 999.0,
+      "cvr": 0.0,
+      "cpc": 3.91,
+      "recommendation": "Add as negative",
+      "recommendation_reason": "$203.40 spent, 0 orders. Add as negative exact to stop wasted spend."
+    },
+    {
+      "campaign_name": "Cast Iron Skillet Pre-Season - Exact",
+      "ad_group": "Cast Iron Skillet Pr AG1",
+      "keyword_text": "non stick pan 12 inch",
+      "match_type": "broad",
+      "search_term": "",
+      "impressions": 6014,
+      "clicks": 194,
+      "spend": 199.77,
+      "sales": 986.98,
+      "orders": 48,
+      "acos": 20.24,
+      "cvr": 24.74,
+      "cpc": 1.03,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 20.24% is on target. No change."
+    },
+    {
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Exact",
+      "ad_group": "Non-Stick Ceramic Fr AG1",
+      "keyword_text": "salt pepper grinder",
+      "match_type": "broad",
+      "search_term": "salt pepper grinder",
+      "impressions": 6520,
+      "clicks": 163,
+      "spend": 196.14,
+      "sales": 594.59,
+      "orders": 25,
+      "acos": 32.99,
+      "cvr": 15.34,
+      "cpc": 1.2,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 32.99% is above target. Lower bid ~15%."
+    },
+    {
+      "campaign_name": "Premium Bamboo Cutting Board - Exact",
+      "ad_group": "Premium Bamboo Cutti AG1",
+      "keyword_text": "pre seasoned skillet",
+      "match_type": "broad",
+      "search_term": "pre seasoned skillet",
+      "impressions": 858,
+      "clicks": 39,
+      "spend": 192.98,
+      "sales": 675.64,
+      "orders": 23,
+      "acos": 28.56,
+      "cvr": 58.97,
+      "cpc": 4.95,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 28.56% is above target. Lower bid ~15%."
+    },
+    {
+      "campaign_name": "Electric Spice Grinder Stain - Exact",
+      "ad_group": "Electric Spice Grind AG1",
+      "keyword_text": "salt pepper grinder",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 884,
+      "clicks": 34,
+      "spend": 182.84,
+      "sales": 293.1,
+      "orders": 10,
+      "acos": 62.38,
+      "cvr": 29.41,
+      "cpc": 5.38,
+      "recommendation": "Lower bid / pause",
+      "recommendation_reason": "ACOS 62.38% is well above target. Lower bid 25-30% or pause."
+    },
+    {
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Exact",
+      "ad_group": "Non-Stick Ceramic Fr AG1",
+      "keyword_text": "cookware set",
+      "match_type": "exact",
+      "search_term": "cookware set",
+      "impressions": 4050,
+      "clicks": 90,
+      "spend": 178.84,
+      "sales": 400.61,
+      "orders": 11,
+      "acos": 44.64,
+      "cvr": 12.22,
+      "cpc": 1.99,
+      "recommendation": "Lower bid / pause",
+      "recommendation_reason": "ACOS 44.64% is well above target. Lower bid 25-30% or pause."
+    },
+    {
+      "campaign_name": "Silicone Kitchen Utensil Set - Exact",
+      "ad_group": "Silicone Kitchen Ute AG1",
+      "keyword_text": "pre seasoned skillet",
+      "match_type": "phrase",
+      "search_term": "pre seasoned skillet",
+      "impressions": 2350,
+      "clicks": 50,
+      "spend": 166.14,
+      "sales": 1807.08,
+      "orders": 56,
+      "acos": 9.19,
+      "cvr": 112.0,
+      "cpc": 3.32,
+      "recommendation": "Harvest to exact",
+      "recommendation_reason": "Converts well (56 orders, 9.19% ACOS) but isn't an exact-match keyword yet. Add as new exact-match keyword and monitor separately."
+    },
+    {
+      "campaign_name": "Stainless Steel Insulated Wa - Exact",
+      "ad_group": "Stainless Steel Insu AG1",
+      "keyword_text": "reusable grocery bags",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 5985,
+      "clicks": 133,
+      "spend": 164.07,
+      "sales": 1115.89,
+      "orders": 42,
+      "acos": 14.7,
+      "cvr": 31.58,
+      "cpc": 1.23,
+      "recommendation": "Raise bid",
+      "recommendation_reason": "ACOS 14.7% is strong. Raise bid 10-20% to capture more volume."
+    },
+    {
+      "campaign_name": "Reusable Produce Mesh Bags ( - Exact",
+      "ad_group": "Reusable Produce Mes AG1",
+      "keyword_text": "reusable grocery bags",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 4247,
+      "clicks": 137,
+      "spend": 153.94,
+      "sales": 1572.03,
+      "orders": 49,
+      "acos": 9.79,
+      "cvr": 35.77,
+      "cpc": 1.12,
+      "recommendation": "Raise bid",
+      "recommendation_reason": "ACOS 9.79% is strong. Raise bid 10-20% to capture more volume."
+    },
+    {
+      "campaign_name": "Electric Spice Grinder Stain - Exact",
+      "ad_group": "Electric Spice Grind AG1",
+      "keyword_text": "cast iron skillet",
+      "match_type": "broad",
+      "search_term": "cast iron skillet",
+      "impressions": 702,
+      "clicks": 39,
+      "spend": 135.84,
+      "sales": 236.92,
+      "orders": 11,
+      "acos": 57.34,
+      "cvr": 28.21,
+      "cpc": 3.48,
+      "recommendation": "Lower bid / pause",
+      "recommendation_reason": "ACOS 57.34% is well above target. Lower bid 25-30% or pause."
+    },
+    {
+      "campaign_name": "Stainless Steel Insulated Wa - Exact",
+      "ad_group": "Stainless Steel Insu AG1",
+      "keyword_text": "stainless steel bottle",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 3400,
+      "clicks": 85,
+      "spend": 119.51,
+      "sales": 427.03,
+      "orders": 14,
+      "acos": 27.99,
+      "cvr": 16.47,
+      "cpc": 1.41,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 27.99% is above target. Lower bid ~15%."
+    },
+    {
+      "campaign_name": "Premium Bamboo Cutting Board - Exact",
+      "ad_group": "Premium Bamboo Cutti AG1",
+      "keyword_text": "vegetable storage bags",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 2266,
+      "clicks": 103,
+      "spend": 89.74,
+      "sales": 0.0,
+      "orders": 0,
+      "acos": 999.0,
+      "cvr": 0.0,
+      "cpc": 0.87,
+      "recommendation": "Add as negative",
+      "recommendation_reason": "$89.74 spent, 0 orders. Add as negative exact to stop wasted spend."
+    },
+    {
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Exact",
+      "ad_group": "Non-Stick Ceramic Fr AG1",
+      "keyword_text": "cooking spatula set",
+      "match_type": "broad",
+      "search_term": "",
+      "impressions": 9630,
+      "clicks": 214,
+      "spend": 78.96,
+      "sales": 190.64,
+      "orders": 6,
+      "acos": 41.42,
+      "cvr": 2.8,
+      "cpc": 0.37,
+      "recommendation": "Lower bid / pause",
+      "recommendation_reason": "ACOS 41.42% is well above target. Lower bid 25-30% or pause."
+    },
+    {
+      "campaign_name": "Premium Bamboo Cutting Board - Exact",
+      "ad_group": "Premium Bamboo Cutti AG1",
+      "keyword_text": "spice grinder electric",
+      "match_type": "phrase",
+      "search_term": "",
+      "impressions": 19,
+      "clicks": 1,
+      "spend": 78.11,
+      "sales": 624.7,
+      "orders": 22,
+      "acos": 12.5,
+      "cvr": 2200.0,
+      "cpc": 78.11,
+      "recommendation": "Needs more data",
+      "recommendation_reason": "Fewer than 10 clicks \u2014 too early to judge."
+    },
+    {
+      "campaign_name": "Electric Spice Grinder Stain - Exact",
+      "ad_group": "Electric Spice Grind AG1",
+      "keyword_text": "reusable grocery bags",
+      "match_type": "broad",
+      "search_term": "reusable grocery bags",
+      "impressions": 3861,
+      "clicks": 143,
+      "spend": 75.09,
+      "sales": 168.34,
+      "orders": 6,
+      "acos": 44.61,
+      "cvr": 4.2,
+      "cpc": 0.53,
+      "recommendation": "Lower bid / pause",
+      "recommendation_reason": "ACOS 44.61% is well above target. Lower bid 25-30% or pause."
+    },
+    {
+      "campaign_name": "Electric Spice Grinder Stain - Exact",
+      "ad_group": "Electric Spice Grind AG1",
+      "keyword_text": "coffee grinder",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 7020,
+      "clicks": 130,
+      "spend": 64.54,
+      "sales": 0.0,
+      "orders": 0,
+      "acos": 999.0,
+      "cvr": 0.0,
+      "cpc": 0.5,
+      "recommendation": "Add as negative",
+      "recommendation_reason": "$64.54 spent, 0 orders. Add as negative exact to stop wasted spend."
+    },
+    {
+      "campaign_name": "Silicone Kitchen Utensil Set - Exact",
+      "ad_group": "Silicone Kitchen Ute AG1",
+      "keyword_text": "32 oz water bottle",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 2479,
+      "clicks": 67,
+      "spend": 56.72,
+      "sales": 332.83,
+      "orders": 12,
+      "acos": 17.04,
+      "cvr": 17.91,
+      "cpc": 0.85,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 17.04% is on target. No change."
+    },
+    {
+      "campaign_name": "Non-Stick Ceramic Frying Pan - Exact",
+      "ad_group": "Non-Stick Ceramic Fr AG1",
+      "keyword_text": "ceramic frying pan",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 8960,
+      "clicks": 160,
+      "spend": 47.29,
+      "sales": 199.23,
+      "orders": 5,
+      "acos": 23.74,
+      "cvr": 3.12,
+      "cpc": 0.3,
+      "recommendation": "Hold",
+      "recommendation_reason": "ACOS 23.74% is on target. No change."
+    },
+    {
+      "campaign_name": "Cast Iron Skillet Pre-Season - Exact",
+      "ad_group": "Cast Iron Skillet Pr AG1",
+      "keyword_text": "spice grinder electric",
+      "match_type": "phrase",
+      "search_term": "spice grinder electric",
+      "impressions": 5016,
+      "clicks": 132,
+      "spend": 39.72,
+      "sales": 136.14,
+      "orders": 5,
+      "acos": 29.18,
+      "cvr": 3.79,
+      "cpc": 0.3,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 29.18% is above target. Lower bid ~15%."
+    },
+    {
+      "campaign_name": "Premium Bamboo Cutting Board - Exact",
+      "ad_group": "Premium Bamboo Cutti AG1",
+      "keyword_text": "cast iron skillet",
+      "match_type": "exact",
+      "search_term": "cast iron skillet",
+      "impressions": 4320,
+      "clicks": 120,
+      "spend": 29.8,
+      "sales": 119.4,
+      "orders": 4,
+      "acos": 24.96,
+      "cvr": 3.33,
+      "cpc": 0.25,
+      "recommendation": "Harvest to exact",
+      "recommendation_reason": "Converts well (4 orders, 24.96% ACOS) but isn't an exact-match keyword yet. Add as new exact-match keyword and monitor separately."
+    },
+    {
+      "campaign_name": "Reusable Produce Mesh Bags ( - Exact",
+      "ad_group": "Reusable Produce Mes AG1",
+      "keyword_text": "cast iron pan 10 inch",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 456,
+      "clicks": 19,
+      "spend": 20.6,
+      "sales": 281.59,
+      "orders": 13,
+      "acos": 7.32,
+      "cvr": 68.42,
+      "cpc": 1.08,
+      "recommendation": "Raise bid",
+      "recommendation_reason": "ACOS 7.32% is strong. Raise bid 10-20% to capture more volume."
+    },
+    {
+      "campaign_name": "Silicone Kitchen Utensil Set - Exact",
+      "ad_group": "Silicone Kitchen Ute AG1",
+      "keyword_text": "kitchen cutting board",
+      "match_type": "broad",
+      "search_term": "",
+      "impressions": 6840,
+      "clicks": 120,
+      "spend": 10.92,
+      "sales": 0.0,
+      "orders": 0,
+      "acos": 999.0,
+      "cvr": 0.0,
+      "cpc": 0.09,
+      "recommendation": "Add as negative",
+      "recommendation_reason": "$10.92 spent, 0 orders. Add as negative exact to stop wasted spend."
+    },
+    {
+      "campaign_name": "Stainless Steel Insulated Wa - Exact",
+      "ad_group": "Stainless Steel Insu AG1",
+      "keyword_text": "cookware set",
+      "match_type": "exact",
+      "search_term": "",
+      "impressions": 4624,
+      "clicks": 136,
+      "spend": 9.97,
+      "sales": 31.04,
+      "orders": 1,
+      "acos": 32.12,
+      "cvr": 0.74,
+      "cpc": 0.07,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 32.12% is above target. Lower bid ~15%."
+    },
+    {
+      "campaign_name": "Cast Iron Skillet Pre-Season - Exact",
+      "ad_group": "Cast Iron Skillet Pr AG1",
+      "keyword_text": "mesh produce bags",
+      "match_type": "broad",
+      "search_term": "",
+      "impressions": 5311,
+      "clicks": 113,
+      "spend": 9.19,
+      "sales": 27.39,
+      "orders": 0,
+      "acos": 33.55,
+      "cvr": 0.0,
+      "cpc": 0.08,
+      "recommendation": "Lower bid",
+      "recommendation_reason": "ACOS 33.55% is above target. Lower bid ~15%."
+    }
+  ],
+  "inventory_alerts": [
+    {
+      "asin": "B08CHTPJ3D",
+      "name": "Stainless Steel Insulated Water Bottle 32oz",
+      "units_available": 101,
+      "units_inbound": 289,
+      "avg_daily_units": 12.7,
+      "days_of_cover": 7.9,
+      "alert_level": "critical",
+      "recommended_reorder_qty": 663
+    },
+    {
+      "asin": "B0BXRQT2MN",
+      "name": "Non-Stick Ceramic Frying Pan 12\"",
+      "units_available": 108,
+      "units_inbound": 113,
+      "avg_daily_units": 13.5,
+      "days_of_cover": 8.0,
+      "alert_level": "critical",
+      "recommended_reorder_qty": 702
+    },
+    {
+      "asin": "B07MFZX89K",
+      "name": "Silicone Kitchen Utensil Set (24 pcs)",
+      "units_available": 836,
+      "units_inbound": 349,
+      "avg_daily_units": 8.4,
+      "days_of_cover": 99.9,
+      "alert_level": "overstock",
+      "recommended_reorder_qty": 0
+    },
+    {
+      "asin": "B09XK7P4VL",
+      "name": "Premium Bamboo Cutting Board Set (3-Piece)",
+      "units_available": 1930,
+      "units_inbound": 29,
+      "avg_daily_units": 19.3,
+      "days_of_cover": 100.0,
+      "alert_level": "overstock",
+      "recommended_reorder_qty": 0
+    },
+    {
+      "asin": "B0C4WKJD9R",
+      "name": "Electric Spice Grinder Stainless",
+      "units_available": 673,
+      "units_inbound": 30,
+      "avg_daily_units": 6.7,
+      "days_of_cover": 100.0,
+      "alert_level": "overstock",
+      "recommended_reorder_qty": 0
+    }
+  ],
+  "recommendations": [
+    {
+      "type": "Negative keyword",
+      "priority": "high",
+      "text": "'stainless steel bottle' (Silicone Kitchen Utensil Set - Exact): $207 spent, 0 orders. Add as negative."
+    },
+    {
+      "type": "Negative keyword",
+      "priority": "high",
+      "text": "'pre seasoned skillet' (Reusable Produce Mesh Bags ( - Exact): $203 spent, 0 orders. Add as negative."
+    },
+    {
+      "type": "Negative keyword",
+      "priority": "high",
+      "text": "'vegetable storage bags' (Premium Bamboo Cutting Board - Exact): $90 spent, 0 orders. Add as negative."
+    },
+    {
+      "type": "Negative keyword",
+      "priority": "high",
+      "text": "'coffee grinder' (Electric Spice Grinder Stain - Exact): $65 spent, 0 orders. Add as negative."
+    },
+    {
+      "type": "Scale opportunity",
+      "priority": "high",
+      "text": "Reusable Produce Mesh Bags ( - Auto: ACOS 7.2%. ACOS 7.2% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "type": "Scale opportunity",
+      "priority": "high",
+      "text": "Reusable Produce Mesh Bags ( - Exact: ACOS 9.0%. ACOS 9.0% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "type": "Cut / restructure",
+      "priority": "high",
+      "text": "Electric Spice Grinder Stain - Exact: ACOS 38.0% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "type": "Scale opportunity",
+      "priority": "high",
+      "text": "Reusable Produce Mesh Bags ( - Broad: ACOS 11.7%. ACOS 11.7% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "type": "Cut / restructure",
+      "priority": "high",
+      "text": "Cast Iron Skillet Pre-Season - Broad: ACOS 35.75% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "type": "Cut / restructure",
+      "priority": "high",
+      "text": "Electric Spice Grinder Stain - Broad: ACOS 49.4% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "type": "Scale opportunity",
+      "priority": "high",
+      "text": "Silicone Kitchen Utensil Set - Exact: ACOS 13.5%. ACOS 13.5% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "type": "Scale opportunity",
+      "priority": "high",
+      "text": "Stainless Steel Insulated Wa - Auto: ACOS 14.8%. ACOS 14.8% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "type": "Scale opportunity",
+      "priority": "high",
+      "text": "Silicone Kitchen Utensil Set - Auto: ACOS 10.8%. ACOS 10.8% is well below your 15% floor. Increase budget/bids 15-20%."
+    },
+    {
+      "type": "Cut / restructure",
+      "priority": "high",
+      "text": "Non-Stick Ceramic Frying Pan - Broad: ACOS 40.3% is well above your 35% ceiling. Cut bids 20-30% or pause the campaign."
+    },
+    {
+      "type": "Inventory critical",
+      "priority": "high",
+      "text": "Stainless Steel Insulated Water Bottle 32oz: 7.9 days of cover left. Reorder 663 units now."
+    },
+    {
+      "type": "Inventory critical",
+      "priority": "high",
+      "text": "Non-Stick Ceramic Frying Pan 12\": 8.0 days of cover left. Reorder 702 units now."
+    }
+  ],
+  "rules": {
+    "acos_scale_below": 15.0,
+    "acos_hold_low": 15.0,
+    "acos_hold_high": 25.0,
+    "acos_optimize_high": 35.0,
+    "tacos_warning": 20.0
+  }
+}/*DATA_END*/;
+
+let DATA = SAMPLE_DATA;
+let sortState = {}; // per-table {key, dir}
+
+function fmtUSD(n) {
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function fmtUSD2(n) {
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtNum(n) { return Number(n).toLocaleString('en-US'); }
+
+function acosClass(a) {
+  if (a >= 999) return 'red';
+  if (a < 15) return 'green';
+  if (a <= 25) return 'blue';
+  if (a <= 35) return 'yellow';
+  return 'red';
+}
+function acosLabel(a) {
+  if (a >= 999) return '∞ (no sales)';
+  return a + '%';
+}
+function recClass(rec) {
+  const map = {
+    'Scale': 'green', 'Raise bid': 'green', 'Harvest to exact': 'purple',
+    'Hold': 'blue', 'Needs more data': 'gray',
+    'Optimize': 'yellow', 'Lower bid': 'yellow',
+    'Cut': 'red', 'Lower bid / pause': 'red', 'Add as negative': 'red',
+  };
+  return map[rec] || 'gray';
+}
+function alertClass(level) {
+  const map = { critical: 'red', low: 'yellow', ok: 'green', overstock: 'purple', unknown: 'gray' };
+  return map[level] || 'gray';
+}
+function alertLabel(level) {
+  const map = { critical: '⚠ Critical', low: '! Low stock', ok: '✓ OK', overstock: '▲ Overstock', unknown: '—' };
+  return map[level] || level;
+}
+
+function render() {
+  renderMeta();
+  renderKPIs();
+  renderRecommendations();
+  renderOverview();
+  renderCampaigns();
+  renderKeywords();
+  renderInventory();
+}
+
+function renderMeta() {
+  const d = new Date(DATA.generated_at);
+  document.getElementById('metaLine').textContent =
+    `${DATA.marketplace} marketplace · trailing ${DATA.period_days} days · generated ${d.toLocaleString()}`;
+}
+
+function renderKPIs() {
+  const s = DATA.summary;
+  const kpis = [
+    { label: 'Total Sales', value: fmtUSD(s.total_sales), sub: `${fmtNum(s.total_units)} units` },
+    { label: 'Ad Spend', value: fmtUSD(s.ad_spend), sub: `ACOS ${s.acos}%` },
+    { label: 'TACOS', value: s.tacos + '%', sub: s.tacos > (DATA.rules?.tacos_warning || 20) ? 'Above target' : 'Healthy' },
+    { label: 'Sessions', value: fmtNum(s.sessions), sub: `CVR ${s.cvr}%` },
+    { label: 'Campaigns', value: fmtNum(DATA.campaigns.length), sub: DATA.campaigns.filter(c => c.recommendation === 'Scale').length + ' scale-ready' },
+    { label: 'Inventory Alerts', value: fmtNum(DATA.inventory_alerts.length), sub: DATA.inventory_alerts.filter(a => a.alert_level === 'critical').length + ' critical' },
+  ];
+  document.getElementById('kpiRow').innerHTML = kpis.map(k => `
+    <div class="kpi">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="sub">${k.sub}</div>
+    </div>`).join('');
+}
+
+function renderRecommendations() {
+  const list = DATA.recommendations || [];
+  document.getElementById('recCount').textContent = list.length ? `(${list.length})` : '';
+  document.getElementById('recList').innerHTML = list.length ? list.map(r => `
+    <div class="rec-item ${r.priority}">
+      <span class="rec-tag">${r.type}</span>
+      <span class="rec-text">${escapeHtml(r.text)}</span>
+    </div>`).join('') : '<div class="rec-item"><span class="rec-text">No action items right now — everything is within target.</span></div>';
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ── Generic sort/filter helpers ───────────────────────────────────────────
+function sortRows(rows, key, dir) {
+  return [...rows].sort((a, b) => {
+    let va = a[key], vb = b[key];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+    if (va === undefined || va === null) va = dir === 'asc' ? Infinity : -Infinity;
+    if (vb === undefined || vb === null) vb = dir === 'asc' ? Infinity : -Infinity;
+    if (va < vb) return dir === 'asc' ? -1 : 1;
+    if (va > vb) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
+function attachSort(tableId, tabKey, renderFn) {
+  const table = document.getElementById(tableId);
+  table.querySelectorAll('thead th[data-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      const cur = sortState[tabKey] || {};
+      const dir = (cur.key === key && cur.dir === 'desc') ? 'asc' : 'desc';
+      sortState[tabKey] = { key, dir };
+      renderFn();
+    });
+  });
+}
+
+function sortArrow(tabKey, key) {
+  const s = sortState[tabKey];
+  if (!s || s.key !== key) return '';
+  return `<span class="arrow">${s.dir === 'asc' ? '▲' : '▼'}</span>`;
+}
+
+// ── Overview ───────────────────────────────────────────────────────────────
+function renderOverview() {
+  const q = (document.getElementById('overviewSearch').value || '').toLowerCase();
+  let rows = DATA.asins.filter(r => !q || r.name.toLowerCase().includes(q) || r.asin.toLowerCase().includes(q));
+  const s = sortState.overview || { key: 'organic_sales', dir: 'desc' };
+  rows = sortRows(rows, s.key, s.dir);
+
+  document.getElementById('overviewCount').textContent = `${rows.length} of ${DATA.asins.length} products`;
+  document.querySelector('#overviewTable tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="name-cell">${escapeHtml(r.name)}</td>
+      <td>${r.asin}</td>
+      <td class="num">${fmtUSD(r.organic_sales)}</td>
+      <td class="num">${fmtUSD(r.paid_sales)}</td>
+      <td class="num">${fmtUSD(r.ad_spend)}</td>
+      <td class="num">${fmtNum(r.units)}</td>
+      <td class="num">${fmtNum(r.sessions)}</td>
+      <td class="num">${r.cvr}%</td>
+      <td class="num"><span class="pill ${acosClass(r.acos)}">${acosLabel(r.acos)}</span></td>
+      <td class="num">${r.days_of_cover ?? '—'}</td>
+      <td><span class="pill ${alertClass(r.inventory_alert)}">${alertLabel(r.inventory_alert)}</span></td>
+    </tr>`).join('');
+
+  // refresh header arrows
+  document.querySelectorAll('#overviewTable thead th[data-key]').forEach(th => {
+    const key = th.dataset.key;
+    th.innerHTML = th.textContent.replace(/\s*[▲▼]$/, '') + sortArrow('overview', key);
+  });
+}
+
+// ── Campaigns ────────────────────────────────────────────────────────────
+function renderCampaigns() {
+  const q = (document.getElementById('campaignSearch').value || '').toLowerCase();
+  const filter = document.getElementById('campaignFilter').value;
+  let rows = DATA.campaigns.filter(r =>
+    (!q || r.campaign_name.toLowerCase().includes(q)) &&
+    (!filter || r.recommendation === filter));
+  const s = sortState.campaigns || { key: 'sales', dir: 'desc' };
+  rows = sortRows(rows, s.key, s.dir);
+
+  document.getElementById('campaignCount').textContent = `${rows.length} of ${DATA.campaigns.length} campaigns`;
+  document.querySelector('#campaignTable tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="name-cell">${escapeHtml(r.campaign_name)}</td>
+      <td class="num">${fmtNum(r.impressions)}</td>
+      <td class="num">${fmtNum(r.clicks)}</td>
+      <td class="num">${fmtUSD2(r.spend)}</td>
+      <td class="num">${fmtUSD2(r.sales)}</td>
+      <td class="num">${fmtNum(r.orders)}</td>
+      <td class="num"><span class="pill ${acosClass(r.acos)}">${acosLabel(r.acos)}</span></td>
+      <td><span class="pill ${recClass(r.recommendation)}">${r.recommendation}</span></td>
+      <td class="reason-cell">${escapeHtml(r.recommendation_reason)}</td>
+    </tr>`).join('');
+
+  document.querySelectorAll('#campaignTable thead th[data-key]').forEach(th => {
+    const key = th.dataset.key;
+    th.innerHTML = th.textContent.replace(/\s*[▲▼]$/, '') + sortArrow('campaigns', key);
+  });
+}
+
+// ── Keywords ─────────────────────────────────────────────────────────────
+function renderKeywords() {
+  const q = (document.getElementById('keywordSearch').value || '').toLowerCase();
+  const filter = document.getElementById('keywordFilter').value;
+  let rows = DATA.keywords.filter(r =>
+    (!q || r.keyword_text.toLowerCase().includes(q) || (r.search_term || '').toLowerCase().includes(q) || r.campaign_name.toLowerCase().includes(q)) &&
+    (!filter || r.recommendation === filter));
+  const s = sortState.keywords || { key: 'spend', dir: 'desc' };
+  rows = sortRows(rows, s.key, s.dir);
+
+  document.getElementById('keywordCount').textContent = `${rows.length} of ${DATA.keywords.length} keywords`;
+  document.querySelector('#keywordTable tbody').innerHTML = rows.map(r => `
+    <tr>
+      <td class="name-cell">${escapeHtml(r.keyword_text)}${r.search_term ? `<div style="color:var(--text-faint);font-size:11px;">search term: "${escapeHtml(r.search_term)}"</div>` : ''}</td>
+      <td>${r.match_type}</td>
+      <td class="name-cell">${escapeHtml(r.campaign_name)}</td>
+      <td class="num">${fmtNum(r.impressions)}</td>
+      <td class="num">${fmtNum(r.clicks)}</td>
+      <td class="num">${fmtUSD2(r.spend)}</td>
+      <td class="num">${fmtUSD2(r.sales)}</td>
+      <td class="num">${fmtUSD2(r.cpc)}</td>
+      <td class="num">${r.cvr}%</td>
+      <td class="num"><span class="pill ${acosClass(r.acos)}">${acosLabel(r.acos)}</span></td>
+      <td><span class="pill ${recClass(r.recommendation)}">${r.recommendation}</span></td>
+      <td class="reason-cell">${escapeHtml(r.recommendation_reason)}</td>
+    </tr>`).join('');
+
+  document.querySelectorAll('#keywordTable thead th[data-key]').forEach(th => {
+    const key = th.dataset.key;
+    const label = th.textContent.replace(/\s*[▲▼]$/, '');
+    th.innerHTML = label + sortArrow('keywords', key);
+  });
+}
+
+// ── Inventory ────────────────────────────────────────────────────────────
+function renderInventory() {
+  const q = (document.getElementById('inventorySearch').value || '').toLowerCase();
+  let rows = DATA.inventory_alerts.filter(r => !q || r.name.toLowerCase().includes(q) || r.asin.toLowerCase().includes(q));
+  const s = sortState.inventory || { key: 'days_of_cover', dir: 'asc' };
+  rows = sortRows(rows, s.key, s.dir);
+
+  document.getElementById('inventoryCount').textContent = `${rows.length} of ${DATA.inventory_alerts.length} alerts`;
+  document.querySelector('#inventoryTable tbody').innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td class="name-cell">${escapeHtml(r.name)}</td>
+      <td>${r.asin}</td>
+      <td class="num">${fmtNum(r.units_available)}</td>
+      <td class="num">${fmtNum(r.units_inbound)}</td>
+      <td class="num">${r.avg_daily_units}</td>
+      <td class="num">${r.days_of_cover ?? '—'}</td>
+      <td><span class="pill ${alertClass(r.alert_level)}">${alertLabel(r.alert_level)}</span></td>
+      <td class="num">${r.recommended_reorder_qty ? fmtNum(r.recommended_reorder_qty) : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-faint);">No inventory alerts — all products healthy.</td></tr>';
+
+  document.querySelectorAll('#inventoryTable thead th[data-key]').forEach(th => {
+    const key = th.dataset.key;
+    const label = th.textContent.replace(/\s*[▲▼]$/, '');
+    th.innerHTML = label + sortArrow('inventory', key);
+  });
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────────
+document.getElementById('tabNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn) return;
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+});
+
+// ── Wire up toolbars ────────────────────────────────────────────────────────
+document.getElementById('overviewSearch').addEventListener('input', renderOverview);
+document.getElementById('campaignSearch').addEventListener('input', renderCampaigns);
+document.getElementById('campaignFilter').addEventListener('change', renderCampaigns);
+document.getElementById('keywordSearch').addEventListener('input', renderKeywords);
+document.getElementById('keywordFilter').addEventListener('change', renderKeywords);
+document.getElementById('inventorySearch').addEventListener('input', renderInventory);
+
+attachSort('overviewTable', 'overview', renderOverview);
+attachSort('campaignTable', 'campaigns', renderCampaigns);
+attachSort('keywordTable', 'keywords', renderKeywords);
+attachSort('inventoryTable', 'inventory', renderInventory);
+
+render(); // initial paint with embedded sample data, always runs first
+
+// ── Then try to load live data.json, overriding sample data if found ────────
+try {
+  fetch('dashboard_data.json', { cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error('no file'); return r.json(); })
+    .then(json => {
+      DATA = json;
+      document.getElementById('dataSourceHint').textContent = 'Live data: dashboard_data.json';
+      render();
+    })
+    .catch(() => {
+      document.getElementById('dataSourceHint').textContent = 'Sample data — run sp_api_backend.py to load your real numbers';
+    });
+} catch (e) {
+  document.getElementById('dataSourceHint').textContent = 'Sample data — run sp_api_backend.py to load your real numbers';
+}
+</script>
+</body>
+</html>
