@@ -47,6 +47,7 @@ jobs:
         run: |
           mkdir -p public
           cp amazon-fba-dashboard.html public/index.html
+          cp dashboard_data.json public/dashboard_data.json
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

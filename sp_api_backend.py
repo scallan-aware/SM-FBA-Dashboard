@@ -94,6 +94,114 @@ ADS_API_ENDPOINTS = {
 # Trade-off: no sessions/CVR data (that's traffic-report-only). Once Brand
 # Analytics access clears, swap this back to the Business Report for that.
 
+def _fetch_inventory_via_summaries_api(inv_api, marketplace_id):
+    """Fallback inventory source: FBA Inventory API's bulk getInventorySummaries.
+
+    Known issue: when an ASIN has more than one sellerSku (e.g. an old/retired
+    SKU and a current active one), this bulk endpoint appears to return only
+    ONE summary row per ASIN and it isn't guaranteed to be the current active
+    SKU — it can be a years-stale, zero-quantity duplicate, which silently
+    makes an in-stock ASIN look out-of-stock in the dashboard. See
+    _fetch_inventory_via_report() for the accurate replacement; this is kept
+    only as a fallback if that report call fails for some reason.
+    """
+    inventory_by_asin = {}
+    asin_rows = []
+    seen_asins = set()
+    next_token = None
+    page = 1
+    while True:
+        kwargs = {"details": True, "marketplaceIds": [marketplace_id]}
+        if next_token:
+            kwargs["nextToken"] = next_token
+        inv_resp = inv_api.get_inventory_summary_marketplace(**kwargs).payload
+        summaries = inv_resp.get("inventorySummaries", [])
+        print(f"  Inventory page {page}: {len(summaries)} items")
+        for item in summaries:
+            asin = item.get("asin")
+            if not asin:
+                continue
+            available = item.get("inventoryDetails", {}).get("fulfillableQuantity", 0)
+            inbound = (item.get("inventoryDetails", {}).get("inboundWorkingQuantity", 0)
+                       + item.get("inventoryDetails", {}).get("inboundShippedQuantity", 0))
+            if asin in inventory_by_asin:
+                inventory_by_asin[asin]["units_available"] += available
+                inventory_by_asin[asin]["units_inbound"] += inbound
+            else:
+                inventory_by_asin[asin] = {"units_available": available, "units_inbound": inbound}
+            if asin not in seen_asins:
+                seen_asins.add(asin)
+                asin_rows.append({"asin": asin, "name": item.get("productName", asin)})
+        next_token = inv_resp.get("pagination", {}).get("nextToken")
+        if not next_token:
+            break
+        page += 1
+        time.sleep(1)  # be polite between pages
+    return asin_rows, inventory_by_asin
+
+
+def _fetch_inventory_via_report(creds, mp, marketplace_id):
+    """Accurate inventory source: the GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA
+    report — this is the same report that powers Seller Central's own "Manage
+    FBA Inventory" screen, one row per active sellerSku, so it doesn't have
+    the per-ASIN SKU-collapsing bug that getInventorySummaries has.
+    """
+    import csv
+    import io
+    from sp_api.api import Reports
+    from sp_api.base import ReportType
+
+    reports_api = Reports(credentials=creds, marketplace=mp)
+    create_resp = reports_api.create_report(
+        reportType=ReportType.GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA,
+        marketplaceIds=[marketplace_id],
+    ).payload
+    report_id = create_resp["reportId"]
+
+    waited, timeout, interval = 0, 300, 10
+    document_id = None
+    while waited < timeout:
+        status = reports_api.get_report(reportId=report_id).payload
+        processing_status = status.get("processingStatus")
+        if processing_status == "DONE":
+            document_id = status["reportDocumentId"]
+            break
+        if processing_status in ("CANCELLED", "FATAL"):
+            raise RuntimeError(f"Inventory report {report_id} ended with status {processing_status}")
+        time.sleep(interval)
+        waited += interval
+    if not document_id:
+        raise TimeoutError(f"Inventory report {report_id} did not finish in {timeout}s")
+
+    doc = reports_api.get_report_document(reportDocumentId=document_id, download=True).payload
+    text = doc["document"]
+
+    reader = csv.DictReader(io.StringIO(text), delimiter="\t")
+    inventory_by_asin = {}
+    asin_rows = []
+    seen_asins = set()
+    row_count = 0
+    for row in reader:
+        row_count += 1
+        asin = row.get("asin")
+        if not asin:
+            continue
+        available = int(float(row.get("afn-fulfillable-quantity") or 0))
+        inbound = (int(float(row.get("afn-inbound-working-quantity") or 0))
+                   + int(float(row.get("afn-inbound-shipped-quantity") or 0)))
+        if asin in inventory_by_asin:
+            # Multiple active SKUs can legitimately share one ASIN - sum them.
+            inventory_by_asin[asin]["units_available"] += available
+            inventory_by_asin[asin]["units_inbound"] += inbound
+        else:
+            inventory_by_asin[asin] = {"units_available": available, "units_inbound": inbound}
+        if asin not in seen_asins:
+            seen_asins.add(asin)
+            asin_rows.append({"asin": asin, "name": row.get("product-name", asin)})
+    print(f"  Inventory report: {row_count} SKU rows, {len(asin_rows)} unique ASINs")
+    return asin_rows, inventory_by_asin
+
+
 def fetch_sp_api_data(marketplace: str, days: int):
     """Fetch FBA inventory (with ASIN/product names) and per-ASIN sales via Sales API."""
     try:
@@ -114,30 +222,19 @@ def fetch_sp_api_data(marketplace: str, days: int):
     end = datetime.datetime.now(datetime.timezone.utc)
     start = end - datetime.timedelta(days=days)
 
-    print("Requesting FBA inventory (ASINs, product names, stock levels)...")
-    inv_api = Inventories(credentials=creds, marketplace=mp)
-    inv_resp = inv_api.get_inventory_summary_marketplace(
-        details=True, marketplaceIds=[marketplace_id]
-    ).payload
-    inventory_by_asin = {}
-    asin_rows = []
-    for item in inv_resp.get("inventorySummaries", []):
-        asin = item.get("asin")
-        if not asin:
-            continue
-        inventory_by_asin[asin] = {
-            "units_available": item.get("inventoryDetails", {}).get("fulfillableQuantity", 0),
-            "units_inbound": item.get("inventoryDetails", {}).get("inboundWorkingQuantity", 0)
-                              + item.get("inventoryDetails", {}).get("inboundShippedQuantity", 0),
-        }
-        asin_rows.append({
-            "asin": asin,
-            "name": item.get("productName", asin),
-        })
+    print("Requesting FBA inventory report (accurate per-SKU stock levels)...")
+    try:
+        asin_rows, inventory_by_asin = _fetch_inventory_via_report(creds, mp, marketplace_id)
+    except Exception as e:
+        print(f"  Warning: inventory report failed ({e}); falling back to inventory summaries API "
+              f"(note: that fallback can misreport stock for ASINs with multiple sellerSkus).")
+        inv_api = Inventories(credentials=creds, marketplace=mp)
+        asin_rows, inventory_by_asin = _fetch_inventory_via_summaries_api(inv_api, marketplace_id)
 
     print(f"Requesting sales metrics for {len(asin_rows)} ASINs via Sales API...")
     sales_api = Sales(credentials=creds, marketplace=mp)
     interval = (start, end)  # tuple of two datetimes, NOT a pre-joined string
+    failed_count = 0
     for row in asin_rows:
         row["organic_sales"] = 0.0
         row["units"] = 0
@@ -159,10 +256,37 @@ def fetch_sp_api_data(marketplace: str, days: int):
                     time.sleep(wait)
                     continue
                 print(f"  Warning: sales metrics failed for {row['asin']}: {e}")
+                failed_count += 1
                 break
         time.sleep(1.1)  # Sales API getOrderMetrics is rate-limited to roughly 0.5 req/sec
 
-    return asin_rows, inventory_by_asin
+    if failed_count:
+        print(f"  Note: sales metrics failed for {failed_count}/{len(asin_rows)} ASINs after retries.")
+
+    # Authoritative account-wide total, independent of the ASIN list above (which is
+    # sourced from current FBA inventory and can miss out-of-stock/new/FBM-only ASINs
+    # that still had sales in the period). This is what the top-level summary uses,
+    # so it should match Seller Central's own Business Report totals.
+    print("Requesting account-wide sales total (ground truth, independent of ASIN list)...")
+    account_totals = {"total_sales": 0.0, "total_units": 0}
+    for attempt in range(5):
+        try:
+            metrics = sales_api.get_order_metrics(
+                interval, Granularity.TOTAL, marketplaceIds=[marketplace_id]
+            ).payload
+            entry = metrics[0] if isinstance(metrics, list) and metrics else (metrics or {})
+            account_totals["total_sales"] = float(entry.get("totalSales", {}).get("amount", 0))
+            account_totals["total_units"] = int(entry.get("unitCount", 0))
+            break
+        except Exception as e:
+            is_quota = "QuotaExceeded" in str(e) or "429" in str(e)
+            if is_quota and attempt < 4:
+                time.sleep(2 ** (attempt + 1))
+                continue
+            print(f"  Warning: account-wide sales total failed: {e}")
+            break
+
+    return asin_rows, inventory_by_asin, account_totals
 
 
 # ── Ads API: campaigns + search terms/keywords ────────────────────────────
@@ -193,6 +317,8 @@ def fetch_ads_api_data(region: str, days: int):
     keyword_rows_raw = _run_ads_report(
         requests, base, headers, start, end,
         ad_product="SPONSORED_PRODUCTS", group_by=["searchTerm"],
+        columns=["campaignId", "campaignName", "adGroupName", "keyword", "matchType", "searchTerm",
+                 "impressions", "clicks", "cost", "sales14d", "purchases14d"],
     )
 
     print("Requesting advertised product report (ASIN-level ad spend/sales)...")
@@ -223,7 +349,12 @@ def _map_campaign_rows(raw_rows):
 
 
 def _map_asin_ad_rows(raw_rows):
-    """Translate raw Ads API v3 advertised-product report fields into {asin, spend, sales}."""
+    """Translate raw Ads API v3 advertised-product report fields into {asin, spend, sales, campaign_id}.
+
+    campaign_id is kept (not just used for the ASIN spend/sales rollup) so
+    assemble_dashboard_data() can build a campaign_id -> ASIN(s) lookup and
+    show which campaigns/keywords belong to a given ASIN in its detail view.
+    """
     mapped = []
     for r in raw_rows:
         asin = r.get("advertisedAsin")
@@ -233,6 +364,7 @@ def _map_asin_ad_rows(raw_rows):
             "asin": asin,
             "spend": float(r.get("cost", 0) or 0),
             "sales": float(r.get("sales14d", 0) or 0),
+            "campaign_id": str(r.get("campaignId", "")),
         })
     return mapped
 
@@ -242,6 +374,7 @@ def _map_keyword_rows(raw_rows):
     mapped = []
     for r in raw_rows:
         mapped.append({
+            "campaign_id": str(r.get("campaignId", "")),
             "campaign_name": r.get("campaignName", "Unknown campaign"),
             "ad_group": r.get("adGroupName", ""),
             "keyword_text": r.get("keyword") or r.get("searchTerm") or "(unknown)",
@@ -295,10 +428,24 @@ def _run_ads_report(requests_mod, base, headers, start, end, ad_product, group_b
         },
     }
     r = requests_mod.post(f"{base}/reporting/reports", headers=headers, json=body)
-    if not r.ok:
-        print(f"  Ads API error {r.status_code}: {r.text}")
-    r.raise_for_status()
-    report_id = r.json()["reportId"]
+    if r.status_code == 425:
+        # Amazon dedups on the actual query (dates + config), not the "name"
+        # label, so re-running for the same date window gets rejected as a
+        # duplicate of an earlier request - reuse that report instead of
+        # failing. detail looks like: "The Request is a duplicate of : <id>"
+        import re
+        m = re.search(r"duplicate of\s*:\s*([a-f0-9-]+)", r.text)
+        if m:
+            report_id = m.group(1)
+            print(f"  Report request was a duplicate of an existing one; reusing report {report_id}.")
+        else:
+            print(f"  Ads API error {r.status_code}: {r.text}")
+            r.raise_for_status()
+    else:
+        if not r.ok:
+            print(f"  Ads API error {r.status_code}: {r.text}")
+        r.raise_for_status()
+        report_id = r.json()["reportId"]
 
     waited, timeout, interval = 0, 300, 10
     download_url = None
@@ -359,6 +506,9 @@ def keyword_recommendation(k):
     if clicks < MIN_CLICKS_FOR_SIGNAL:
         return "Needs more data", "Fewer than 10 clicks — too early to judge."
 
+    if is_search_term and k.get("already_harvested"):
+        return "Already harvested", "This search term already has a matching exact-match keyword live in the account — no further action needed here."
+
     if is_search_term and orders >= HARVEST_MIN_ORDERS and a < ACOS_HOLD_HIGH:
         return "Harvest to exact", f"Converts well ({orders} orders, {a}% ACOS) but isn't an exact-match keyword yet. Add as new exact-match keyword and monitor separately."
 
@@ -369,6 +519,112 @@ def keyword_recommendation(k):
     if a <= ACOS_OPTIMIZE_HIGH:
         return "Lower bid", f"ACOS {a}% is above target. Lower bid ~15%."
     return "Lower bid / pause", f"ACOS {a}% is well above target. Lower bid 25-30% or pause."
+
+
+def _acos_text(a):
+    return "∞ (no sales)" if a >= 999 else f"{a}%"
+
+
+def asin_insights(row, keywords=None, campaigns=None):
+    """Per-ASIN diagnostic insights + concrete suggestions for the Overview
+    detail drill-down: organic/listing health, paid ACOS + which keywords are
+    driving it, and inventory position — each with an actionable next step.
+    """
+    keywords = keywords or []
+    campaigns = campaigns or []
+    insights = []
+    total_sales = row["organic_sales"] + row["paid_sales"]
+
+    # ── Organic / listing health ──────────────────────────────────────────
+    if total_sales == 0:
+        insights.append({
+            "severity": "high", "issue": "No sales in this period",
+            "suggestion": "Confirm the listing is active and buyable, check price against competitors, "
+                          "and make sure your keywords still match what shoppers are searching for.",
+        })
+    elif row["organic_sales"] == 0 and row["paid_sales"] > 0:
+        insights.append({
+            "severity": "high", "issue": "Organic sales are $0 — 100% ad-dependent",
+            "suggestion": "Little to no organic ranking. Refresh the title with top keywords, upgrade the "
+                          "main + lifestyle images, strengthen bullet points and backend search terms, and "
+                          "check price competitiveness.",
+        })
+    else:
+        organic_ratio = (row["organic_sales"] / total_sales) if total_sales else 0
+        if organic_ratio < 0.25:
+            insights.append({
+                "severity": "medium", "issue": f"Only {round(organic_ratio * 100)}% of sales are organic",
+                "suggestion": "Heavily ads-reliant. Investing in listing content (title, images, A+ content) "
+                              "and backend keywords should lift organic ranking so you rely less on paid traffic.",
+            })
+
+    if row["sessions"] and row["sessions"] >= 200 and row["cvr"] < 5:
+        insights.append({
+            "severity": "medium", "issue": f"Conversion rate is {row['cvr']}% on {row['sessions']} sessions",
+            "suggestion": "Traffic is healthy but not converting — review the main image, price, reviews/rating, "
+                          "and A+ content.",
+        })
+
+    # ── Paid ACOS + the keywords driving it ───────────────────────────────
+    if row["ad_spend"] > 0:
+        a = row["acos"]
+        if a >= 999:
+            insights.append({
+                "severity": "high", "issue": f"${row['ad_spend']:.0f} spent with $0 attributed paid sales",
+                "suggestion": "Pause or restructure these campaigns — check the Keyword Analysis tab (filtered "
+                              "to this ASIN) for search terms burning spend with zero orders.",
+            })
+        elif a >= ACOS_OPTIMIZE_HIGH:
+            worst = sorted([k for k in keywords if k["spend"] > 0], key=lambda k: k["acos"], reverse=True)[:5]
+            if worst:
+                names = ", ".join(f"\"{k['keyword_text']}\" ({_acos_text(k['acos'])})" for k in worst)
+                suggestion = f"Cut or pause the worst-performing keywords for this ASIN: {names}."
+            else:
+                suggestion = "Cut or pause the worst-performing keywords for this ASIN (see Keyword Analysis)."
+            insights.append({"severity": "high", "issue": f"Paid ACOS is {_acos_text(a)} — well above target",
+                              "suggestion": suggestion})
+        elif a > ACOS_HOLD_HIGH:
+            insights.append({
+                "severity": "medium", "issue": f"Paid ACOS is {_acos_text(a)} — above target",
+                "suggestion": "Trim bids ~10-15% on the weakest keywords for this ASIN (see Keyword Analysis, "
+                              "filtered to this ASIN).",
+            })
+        elif a < ACOS_SCALE_BELOW:
+            insights.append({
+                "severity": "low", "issue": f"Paid ACOS is {_acos_text(a)} — well below target",
+                "suggestion": "Strong efficiency. Consider raising bids/budget 15-20% on these campaigns to "
+                              "capture more volume.",
+            })
+
+    # ── Inventory position ─────────────────────────────────────────────────
+    doc = row["days_of_cover"]
+    if doc is not None:
+        if row["inventory_alert"] == "critical":
+            insights.append({
+                "severity": "high", "issue": f"Only {doc} days of stock left",
+                "suggestion": "Reorder now to avoid a stockout — see Inventory Alerts for the recommended quantity.",
+            })
+        elif row["inventory_alert"] == "low":
+            insights.append({
+                "severity": "medium", "issue": f"{doc} days of stock left",
+                "suggestion": "Getting low — place a reorder soon so it lands before you run out.",
+            })
+        elif row["inventory_alert"] == "overstock":
+            severe = doc > DAYS_OF_COVER_OVERSTOCK * 2
+            insights.append({
+                "severity": "high" if severe else "medium",
+                "issue": f"{doc} days of cover ({row['units_available']} units on hand)",
+                "suggestion": ("Significantly overstocked — consider a meaningful price cut, a limited-time "
+                               "promotion/coupon, or removing excess units to avoid long-term storage fees."
+                               if severe else
+                               "Overstocked. A modest price decrease or a promotion would help move inventory faster."),
+            })
+
+    if not insights:
+        insights.append({"severity": "low", "issue": "Performing within target",
+                          "suggestion": "No action needed right now — keep monitoring."})
+
+    return insights
 
 
 def inventory_alert_level(days_of_cover):
@@ -449,6 +705,7 @@ def generate_demo_data(days: int):
             if random.random() < 0.15:
                 orders, sales = 0, 0.0  # some pure-spend losers
             keywords_raw.append({
+                "campaign_id": f"{asin} - Exact",
                 "campaign_name": f"{name[:28]} - Exact",
                 "ad_group": f"{name[:20]} AG1",
                 "keyword_text": term,
@@ -461,21 +718,27 @@ def generate_demo_data(days: int):
                 "orders": orders,
             })
 
-    asin_ad_rows = [{"asin": c["asin"], "spend": c["spend"], "sales": c["sales"]} for c in campaigns_raw]
+    asin_ad_rows = [{"asin": c["asin"], "spend": c["spend"], "sales": c["sales"],
+                      "campaign_id": c["campaign_id"]} for c in campaigns_raw]
 
     return asins, inventory, campaigns_raw, keywords_raw, asin_ad_rows
 
 
 # ── Assembly ───────────────────────────────────────────────────────────────
 
-def assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_ad_rows, days, marketplace):
+def assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_ad_rows, days, marketplace,
+                             account_totals=None):
     # merge ad spend/sales onto asin rows using the ASIN-level ad attribution rows
     # (from the advertised-product report live, or tagged directly in demo data)
     ad_by_asin = {}
+    campaign_to_asins = {}
     for r in asin_ad_rows:
         d = ad_by_asin.setdefault(r["asin"], {"spend": 0.0, "sales": 0.0})
         d["spend"] += r["spend"]
         d["sales"] += r["sales"]
+        cid = r.get("campaign_id")
+        if cid:
+            campaign_to_asins.setdefault(cid, set()).add(r["asin"])
 
     asin_out = []
     inventory_alerts = []
@@ -521,14 +784,32 @@ def assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_
             "spend": round(c["spend"], 2), "sales": round(c["sales"], 2),
             "orders": c["orders"], "acos": a,
             "recommendation": rec, "recommendation_reason": reason,
+            "asins": sorted(campaign_to_asins.get(c["campaign_id"], [])),
         })
     campaigns_out.sort(key=lambda x: x["sales"], reverse=True)
+
+    # Detect search terms that already have a live exact-match keyword targeting
+    # them, so "Harvest to exact" stops firing once you've actually done it in
+    # the Ads console — the very next report pull that includes the new exact
+    # keyword's own row is what flips this, no manual tracking needed.
+    exact_keywords_by_campaign = {}
+    for k in keywords_raw:
+        if (k.get("match_type") or "").lower() == "exact":
+            camp = k["campaign_name"]
+            text = (k.get("keyword_text") or "").strip().lower()
+            exact_keywords_by_campaign.setdefault(camp, set()).add(text)
 
     keywords_out = []
     for k in keywords_raw:
         a = acos(k["spend"], k["sales"])
         is_search_term = bool(k.get("search_term"))
-        rec, reason = keyword_recommendation({**k, "acos": a, "is_search_term": is_search_term})
+        already_harvested = False
+        if is_search_term:
+            term_text = (k.get("search_term") or k.get("keyword_text") or "").strip().lower()
+            already_harvested = term_text in exact_keywords_by_campaign.get(k["campaign_name"], set())
+        rec, reason = keyword_recommendation({
+            **k, "acos": a, "is_search_term": is_search_term, "already_harvested": already_harvested,
+        })
         keywords_out.append({
             "campaign_name": k["campaign_name"], "ad_group": k["ad_group"],
             "keyword_text": k["keyword_text"], "match_type": k["match_type"],
@@ -539,35 +820,80 @@ def assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_
             "cvr": round((k["orders"] / k["clicks"] * 100), 2) if k["clicks"] else 0,
             "cpc": round((k["spend"] / k["clicks"]), 2) if k["clicks"] else 0,
             "recommendation": rec, "recommendation_reason": reason,
+            "asins": sorted(campaign_to_asins.get(k.get("campaign_id", ""), [])),
         })
     keywords_out.sort(key=lambda x: x["spend"], reverse=True)
 
-    total_sales = sum(r["organic_sales"] + r["paid_sales"] for r in asin_out)
+    # Index campaigns/keywords by ASIN (via the campaign_id -> ASIN(s) map built
+    # above) so the Overview drill-down can show exactly which campaigns and
+    # keywords belong to a given product, and so asin_insights() can name the
+    # actual worst-performing keywords rather than just pointing at a tab.
+    keywords_by_asin = {}
+    for k in keywords_out:
+        for asin in k.get("asins", []):
+            keywords_by_asin.setdefault(asin, []).append(k)
+    campaigns_by_asin = {}
+    for c in campaigns_out:
+        for asin in c.get("asins", []):
+            campaigns_by_asin.setdefault(asin, []).append(c)
+
+    for row in asin_out:
+        row["insights"] = asin_insights(
+            row, keywords_by_asin.get(row["asin"], []), campaigns_by_asin.get(row["asin"], []),
+        )
+        row["campaign_count"] = len(campaigns_by_asin.get(row["asin"], []))
+        row["keyword_count"] = len(keywords_by_asin.get(row["asin"], []))
+
+    # Ground truth for the top-line summary: account-wide sales, independent of the
+    # ASIN list (which is sourced from current FBA inventory and can miss ASINs that
+    # had sales but aren't currently in stock). Falls back to summing per-ASIN rows
+    # in demo mode or if the account-wide call failed.
+    summed_sales = sum(r["organic_sales"] + r["paid_sales"] for r in asin_out)
+    summed_units = sum(r["units"] for r in asin_out)
+    if account_totals and account_totals.get("total_sales"):
+        total_sales = account_totals["total_sales"]
+        total_units = account_totals["total_units"]
+    else:
+        total_sales = summed_sales
+        total_units = summed_units
     total_ad_spend = sum(r["ad_spend"] for r in asin_out)
-    total_units = sum(r["units"] for r in asin_out)
     total_sessions = sum(r["sessions"] for r in asin_out)
     overall_acos = acos(total_ad_spend, sum(r["paid_sales"] for r in asin_out))
     tacos = round((total_ad_spend / total_sales * 100), 2) if total_sales else 0
 
+    # Stable IDs (independent of day-to-day numbers like $ spent or ACOS%) so the
+    # dashboard can remember which action items a user has already marked done
+    # across daily data refreshes, keyed by the underlying entity rather than
+    # the rendered text.
     top_line = []
     for k in keywords_out:
         if k["recommendation"] == "Add as negative" and k["spend"] >= NEG_KEYWORD_SPEND_THRESHOLD * 2:
-            top_line.append({"type": "Negative keyword", "priority": "high",
-                              "text": f"'{k['keyword_text']}' ({k['campaign_name']}): ${k['spend']:.0f} spent, 0 orders. Add as negative."})
+            top_line.append({
+                "id": f"negkw::{k['campaign_name']}::{k['keyword_text']}",
+                "type": "Negative keyword", "priority": "high",
+                "text": f"'{k['keyword_text']}' ({k['campaign_name']}): ${k['spend']:.0f} spent, 0 orders. Add as negative."})
     for c in campaigns_out:
         if c["recommendation"] == "Scale":
-            top_line.append({"type": "Scale opportunity", "priority": "high",
-                              "text": f"{c['campaign_name']}: ACOS {c['acos']}%. {c['recommendation_reason']}"})
+            top_line.append({
+                "id": f"scale::{c['campaign_id']}",
+                "type": "Scale opportunity", "priority": "high",
+                "text": f"{c['campaign_name']}: ACOS {c['acos']}%. {c['recommendation_reason']}"})
         elif c["recommendation"] == "Cut":
-            top_line.append({"type": "Cut / restructure", "priority": "high",
-                              "text": f"{c['campaign_name']}: {c['recommendation_reason']}"})
+            top_line.append({
+                "id": f"cut::{c['campaign_id']}",
+                "type": "Cut / restructure", "priority": "high",
+                "text": f"{c['campaign_name']}: {c['recommendation_reason']}"})
     for a in inventory_alerts:
         if a["alert_level"] == "critical":
-            top_line.append({"type": "Inventory critical", "priority": "high",
-                              "text": f"{a['name']}: {a['days_of_cover']} days of cover left. Reorder {a['recommended_reorder_qty']} units now."})
+            top_line.append({
+                "id": f"inv::{a['asin']}",
+                "type": "Inventory critical", "priority": "high",
+                "text": f"{a['name']}: {a['days_of_cover']} days of cover left. Reorder {a['recommended_reorder_qty']} units now."})
     if tacos > TACOS_WARNING:
-        top_line.append({"type": "TACOS warning", "priority": "medium",
-                          "text": f"TACOS is {tacos}% (ads / total sales). Over {TACOS_WARNING:.0f}% suggests over-reliance on paid traffic — invest in organic/SEO."})
+        top_line.append({
+            "id": "tacos::overall",
+            "type": "TACOS warning", "priority": "medium",
+            "text": f"TACOS is {tacos}% (ads / total sales). Over {TACOS_WARNING:.0f}% suggests over-reliance on paid traffic — invest in organic/SEO."})
 
     return {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -603,16 +929,18 @@ def main():
                          help="Dashboard HTML file to update with embedded fresh data (set to '' to skip)")
     args = parser.parse_args()
 
+    account_totals = None
     if args.demo or SP_API_CREDENTIALS["refresh_token"].startswith("YOUR_"):
         if not args.demo:
             print("No credentials configured — falling back to --demo sample data.")
             print("See SETUP_GUIDE.md to connect real SP-API + Ads API data.\n")
         asins, inventory, campaigns_raw, keywords_raw, asin_ad_rows = generate_demo_data(args.days)
     else:
-        asins, inventory = fetch_sp_api_data(args.marketplace, args.days)
+        asins, inventory, account_totals = fetch_sp_api_data(args.marketplace, args.days)
         campaigns_raw, keywords_raw, asin_ad_rows = fetch_ads_api_data(args.region, args.days)
 
-    data = assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_ad_rows, args.days, args.marketplace)
+    data = assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_ad_rows, args.days,
+                                    args.marketplace, account_totals=account_totals)
 
     out_path = Path(args.out)
     out_path.write_text(json.dumps(data, indent=2))
