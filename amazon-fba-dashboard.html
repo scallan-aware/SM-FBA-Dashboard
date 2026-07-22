@@ -129,8 +129,10 @@
   .modal-overlay.open { display: flex; }
   .modal-panel {
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
-    max-width: 780px; width: 100%; padding: 22px 24px 26px; margin-bottom: 40px;
+    max-width: 1040px; width: 100%; padding: 22px 24px 26px; margin-bottom: 40px;
+    overflow-x: hidden;
   }
+  .mini-table-wrap { overflow-x: auto; }
   .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 6px; }
   .modal-header h2 { font-size: 17px; margin: 0 0 4px; font-weight: 650; }
   .modal-header .asin-sub { color: var(--text-dim); font-size: 12.5px; }
@@ -76082,7 +76084,7 @@ function renderAsinDetailHtml(row) {
     </div>`).join('');
 
   const campaignsHtml = relatedCampaigns.length ? `
-    <table class="mini-table">
+    <div class="mini-table-wrap"><table class="mini-table">
       <thead><tr><th>Campaign</th><th class="num">Spend</th><th class="num">Sales</th><th class="num">ACOS</th><th>Action</th></tr></thead>
       <tbody>${relatedCampaigns.map(c => `
         <tr>
@@ -76092,19 +76094,23 @@ function renderAsinDetailHtml(row) {
           <td class="num"><span class="pill ${acosClass(c.acos)}">${acosLabel(c.acos)}</span></td>
           <td><span class="pill ${recClass(c.recommendation)}">${escapeHtml(c.recommendation)}</span></td>
         </tr>`).join('')}</tbody>
-    </table>` : '<div class="detail-empty">No campaigns are attributed to this ASIN in this period.</div>';
+    </table></div>` : '<div class="detail-empty">No campaigns are attributed to this ASIN in this period.</div>';
 
+  const hasSharedCampaignKeywords = relatedKeywords.some(k => (k.asins || []).length > 1);
   const keywordsHtml = relatedKeywords.length ? `
-    <table class="mini-table">
-      <thead><tr><th>Keyword / search term</th><th class="num">Spend</th><th class="num">ACOS</th><th>Action</th></tr></thead>
-      <tbody>${relatedKeywords.slice(0, 15).map(k => `
+    ${hasSharedCampaignKeywords ? `<div class="detail-empty" style="margin-bottom:8px;">Some rows below belong to a campaign that advertises multiple products (marked <span class="pill gray" style="padding:1px 6px;font-size:10px;">shared</span>) — their spend isn't necessarily driven by searches for this specific product.</div>` : ''}
+    <div class="mini-table-wrap"><table class="mini-table">
+      <thead><tr><th>Keyword / search term</th><th>Campaign</th><th>Ad group</th><th class="num">Spend</th><th class="num">ACOS</th><th>Action</th></tr></thead>
+      <tbody>${relatedKeywords.slice(0, 20).map(k => `
         <tr>
           <td>${escapeHtml(k.keyword_text)}</td>
+          <td>${escapeHtml(k.campaign_name)}${(k.asins || []).length > 1 ? ' <span class="pill gray" style="padding:1px 6px;font-size:10px;">shared</span>' : ''}</td>
+          <td>${escapeHtml(k.ad_group || '—')}</td>
           <td class="num">${fmtUSD(k.spend)}</td>
           <td class="num"><span class="pill ${acosClass(k.acos)}">${acosLabel(k.acos)}</span></td>
           <td><span class="pill ${recClass(k.recommendation)}">${escapeHtml(k.recommendation)}</span></td>
         </tr>`).join('')}</tbody>
-    </table>${relatedKeywords.length > 15 ? `<div class="detail-empty">+ ${relatedKeywords.length - 15} more — see Keyword Analysis tab.</div>` : ''}` :
+    </table></div>${relatedKeywords.length > 20 ? `<div class="detail-empty">+ ${relatedKeywords.length - 20} more — see Keyword Analysis tab.</div>` : ''}` :
     '<div class="detail-empty">No keywords are attributed to this ASIN in this period.</div>';
 
   return `
