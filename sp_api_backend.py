@@ -140,11 +140,14 @@ def _fetch_inventory_via_summaries_api(inv_api, marketplace_id):
     return asin_rows, inventory_by_asin
 
 
-def _fetch_inventory_via_report(creds, mp, marketplace_id):
+def _fetch_inventory_via_report(creds, mp, marketplace_id, max_attempts=3, retry_delay=30):
     """Accurate inventory source: the GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA
     report — this is the same report that powers Seller Central's own "Manage
     FBA Inventory" screen, one row per active sellerSku, so it doesn't have
     the per-ASIN SKU-collapsing bug that getInventorySummaries has.
+
+    Retries up to max_attempts times if the report ends with FATAL status,
+    waiting retry_delay seconds between attempts.
     """
     import csv
     import io
@@ -152,26 +155,44 @@ def _fetch_inventory_via_report(creds, mp, marketplace_id):
     from sp_api.base import ReportType
 
     reports_api = Reports(credentials=creds, marketplace=mp)
-    create_resp = reports_api.create_report(
-        reportType=ReportType.GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA,
-        marketplaceIds=[marketplace_id],
-    ).payload
-    report_id = create_resp["reportId"]
 
-    waited, timeout, interval = 0, 300, 10
-    document_id = None
-    while waited < timeout:
-        status = reports_api.get_report(reportId=report_id).payload
-        processing_status = status.get("processingStatus")
-        if processing_status == "DONE":
-            document_id = status["reportDocumentId"]
-            break
-        if processing_status in ("CANCELLED", "FATAL"):
-            raise RuntimeError(f"Inventory report {report_id} ended with status {processing_status}")
-        time.sleep(interval)
-        waited += interval
-    if not document_id:
-        raise TimeoutError(f"Inventory report {report_id} did not finish in {timeout}s")
+    for attempt in range(1, max_attempts + 1):
+        if attempt > 1:
+            print(f"  Retrying inventory report (attempt {attempt}/{max_attempts}) after {retry_delay}s...")
+            time.sleep(retry_delay)
+
+        create_resp = reports_api.create_report(
+            reportType=ReportType.GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA,
+            marketplaceIds=[marketplace_id],
+        ).payload
+        report_id = create_resp["reportId"]
+
+        # Amazon's report processing time is highly variable in practice we've
+        # seen it take 15-20+ minutes for these SP-API/Ads API reports, so a
+        # short timeout here just causes a silent fallback to the less
+        # accurate inventory source - 900s (15 min) gives it real room.
+        waited, timeout, interval = 0, 900, 15
+        document_id = None
+        fatal = False
+        while waited < timeout:
+            status = reports_api.get_report(reportId=report_id).payload
+            processing_status = status.get("processingStatus")
+            if processing_status == "DONE":
+                document_id = status["reportDocumentId"]
+                break
+            if processing_status in ("CANCELLED", "FATAL"):
+                print(f"  Inventory report {report_id} ended with status {processing_status} (attempt {attempt}/{max_attempts})")
+                fatal = True
+                break
+            time.sleep(interval)
+            waited += interval
+
+        if document_id:
+            break  # success — exit retry loop
+        if not fatal:
+            raise TimeoutError(f"Inventory report {report_id} did not finish in {timeout}s")
+        if attempt == max_attempts:
+            raise RuntimeError(f"Inventory report failed with FATAL status after {max_attempts} attempts")
 
     doc = reports_api.get_report_document(reportDocumentId=document_id, download=True).payload
     text = doc["document"]
@@ -447,7 +468,10 @@ def _run_ads_report(requests_mod, base, headers, start, end, ad_product, group_b
         r.raise_for_status()
         report_id = r.json()["reportId"]
 
-    waited, timeout, interval = 0, 300, 10
+    # Same reasoning as the inventory report above - these can take much
+    # longer than 5 minutes, so give this real headroom instead of failing
+    # (which previously showed up as undercounted ad spend on GitHub Pages).
+    waited, timeout, interval = 0, 900, 15
     download_url = None
     while waited < timeout:
         status_r = requests_mod.get(f"{base}/reporting/reports/{report_id}", headers=headers)
@@ -856,9 +880,16 @@ def assemble_dashboard_data(asins, inventory, campaigns_raw, keywords_raw, asin_
     else:
         total_sales = summed_sales
         total_units = summed_units
-    total_ad_spend = sum(r["ad_spend"] for r in asin_out)
+    # Use ad_by_asin (built from every advertised ASIN in the Ads API report)
+    # rather than summing asin_out, which only covers ASINs currently in FBA
+    # inventory. An ASIN that's out of stock, discontinued, or FBM-only can
+    # still have live ad spend, and summing asin_out silently dropped it -
+    # this was the main cause of ad spend/ACOS looking undercounted vs. the
+    # Ads console.
+    total_ad_spend = round(sum(d["spend"] for d in ad_by_asin.values()), 2)
+    total_paid_sales_all = sum(d["sales"] for d in ad_by_asin.values())
     total_sessions = sum(r["sessions"] for r in asin_out)
-    overall_acos = acos(total_ad_spend, sum(r["paid_sales"] for r in asin_out))
+    overall_acos = acos(total_ad_spend, total_paid_sales_all)
     tacos = round((total_ad_spend / total_sales * 100), 2) if total_sales else 0
 
     # Stable IDs (independent of day-to-day numbers like $ spent or ACOS%) so the
